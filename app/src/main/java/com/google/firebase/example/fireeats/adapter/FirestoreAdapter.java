@@ -13,14 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- package com.google.firebase.example.fireeats.adapter;
+package com.google.firebase.example.fireeats.adapter;
+
+import android.util.Log;
 
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.firebase.firestore.DocumentChange;
 import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.Query;
+import com.google.firebase.firestore.QuerySnapshot;
 
 import java.util.ArrayList;
 
@@ -30,12 +35,74 @@ import java.util.ArrayList;
  * Note that this class forgoes some efficiency to gain simplicity. For example, the result of
  * {@link DocumentSnapshot#toObject(Class)} is not cached so the same object may be deserialized
  * many times as the user scrolls.
- * 
+ *
  * See the adapter classes in FirebaseUI (https://github.com/firebase/FirebaseUI-Android/tree/master/firestore) for a
  * more efficient implementation of a Firestore RecyclerView Adapter.
  */
 public abstract class FirestoreAdapter<VH extends RecyclerView.ViewHolder>
-        extends RecyclerView.Adapter<VH> {
+        extends RecyclerView.Adapter<VH>
+        implements EventListener<QuerySnapshot> // Add this code from Step 7 of the codelab
+{
+// Add the following method from Step 7 of the codelab
+
+    @Override
+    public void onEvent(QuerySnapshot documentSnapshots,
+                        FirebaseFirestoreException e) {
+
+        // Handle errors
+        if (e != null) {
+            Log.w(TAG, "onEvent:error", e);
+            return;
+        }
+
+        // Dispatch the event
+        for (DocumentChange change : documentSnapshots.getDocumentChanges()) {
+            // Snapshot of the changed document
+            DocumentSnapshot snapshot = change.getDocument();
+
+            switch (change.getType()) {
+                case ADDED:
+                    // handle document add
+                    onDocumentAdded(change);
+                    break;
+                case MODIFIED:
+                    // handle document modified
+                    onDocumentModified(change);
+                    break;
+                case REMOVED:
+                    // handle document removed
+                    onDocumentRemoved(change);
+                    break;
+            }
+        }
+
+        onDataChanged();
+    }
+
+    // Add these three methods from Step 7 of the codelab
+    protected void onDocumentAdded(DocumentChange change) {
+        mSnapshots.add(change.getNewIndex(), change.getDocument());
+        notifyItemInserted(change.getNewIndex());
+    }
+
+    protected void onDocumentModified(DocumentChange change) {
+        if (change.getOldIndex() == change.getNewIndex()) {
+            // Item changed but remained in same position
+            mSnapshots.set(change.getOldIndex(), change.getDocument());
+            notifyItemChanged(change.getOldIndex());
+        } else {
+            // Item changed and changed position
+            mSnapshots.remove(change.getOldIndex());
+            mSnapshots.add(change.getNewIndex(), change.getDocument());
+            notifyItemMoved(change.getOldIndex(), change.getNewIndex());
+        }
+    }
+
+    protected void onDocumentRemoved(DocumentChange change) {
+        mSnapshots.remove(change.getOldIndex());
+        notifyItemRemoved(change.getOldIndex());
+    }
+
 
     private static final String TAG = "Firestore Adapter";
 
@@ -48,8 +115,12 @@ public abstract class FirestoreAdapter<VH extends RecyclerView.ViewHolder>
         mQuery = query;
     }
 
+    // Add this code from Step 7 of the codelab:
+
     public void startListening() {
-        // TODO(developer): Implement
+        if (mQuery != null && mRegistration == null) {
+            mRegistration = mQuery.addSnapshotListener(this);
+        }
     }
 
     public void stopListening() {
